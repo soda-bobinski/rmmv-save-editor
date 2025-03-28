@@ -2,15 +2,18 @@ import os
 import json
 import base64
 import shutil
+import winreg
 from lzstring import LZString
+from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QTreeWidget, QTreeWidgetItem,
     QPushButton, QFileDialog, QMessageBox,
-    QToolBar, QStyle, QLabel, QScrollArea
+    QToolBar, QStyle, QLabel, QScrollArea,
+    QDialog, QListWidget, QVBoxLayout, QPushButton
 )
 from PySide6.QtGui import QAction, QClipboard, QKeySequence
-from PySide6.QtCore import Qt, QObject, QByteArray
+from PySide6.QtCore import Qt, QObject, QByteArray, QThread, Signal
 
 
 class Command:
@@ -26,6 +29,136 @@ class SafeTreeWidgetItem(QTreeWidgetItem):
         self.original_key = ""
         self.setFlags(self.flags() | Qt.ItemIsEditable)
 
+class GameScanner(QThread):
+    game_found = Signal(Path)
+    finished = Signal()
+
+    def __init__(self, search_paths):
+        super().__init__()
+        self.search_paths = search_paths
+
+    def run(self):
+        checked_paths = set()
+        for base_path in self.search_paths:
+            try:
+                for pattern in ["*", "*/*"]:
+                    for path in base_path.glob(pattern):
+                        if path.is_dir() and path not in checked_paths:
+                            if self.is_rpg_mv_game(path):
+                                self.game_found.emit(path)
+                            checked_paths.add(path)
+            except Exception as e:
+                continue
+        self.finished.emit()
+
+class GameDetectionDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.game_paths = []
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Detected RPG Maker MV Games")
+        self.setGeometry(200, 200, 400, 300)
+
+        layout = QVBoxLayout()
+
+        self.list_widget = QListWidget()
+        self.refresh_btn = QPushButton("Refresh List")
+        self.refresh_btn.clicked.connect(self.detect_games)
+
+        layout.addWidget(self.list_widget)
+        layout.addWidget(self.refresh_btn)
+
+        self.setLayout(layout)
+        self.detect_games()
+
+    def detect_games(self):
+        self.list_widget.clear()
+        self.game_paths = []
+
+        # Get all available drives safely
+        def get_windows_drives():
+            import ctypes
+            drives = []
+            drive_types = {
+                0: "Unknown", 1: "No Root", 2: "Removable",
+                3: "Local Disk", 4: "Network", 5: "CD-ROM",
+                6: "RAM Disk"
+            }
+
+            for drive in range(65, 91):  # A-Z
+                drive_name = ctypes.c_wchar_p(chr(drive) + ":\\")
+                if ctypes.windll.kernel32.GetDriveTypeW(drive_name) == 3:
+                    drives.append(Path(drive_name.value))
+            return drives
+
+        # Common installation locations
+        search_paths = [
+            Path("C:/Program Files"),
+            Path("C:/Program Files (x86)"),
+            Path.home() / "Games",
+            Path.home() / "Desktop",
+            Path.home() / "Documents",
+            Path.home() / "Downloads",
+            Path.home() / "AppData/Local"
+        ]
+
+        # Add drives and platform paths safely
+        search_paths.extend(get_windows_drives())
+
+        # Add Steam paths with validation
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam") as key:
+                steam_path = Path(winreg.QueryValueEx(key, "InstallPath")[0])
+                steam_paths = [
+                    steam_path / "steamapps/common",
+                    steam_path / "steamapps/compatdata"
+                ]
+                search_paths.extend([p for p in steam_paths if p.exists()])
+        except Exception:
+            pass
+
+        # Remove duplicates and invalid paths
+        valid_paths = []
+        for p in search_paths:
+            try:
+                if p.exists() and p.is_dir():
+                    valid_paths.append(p.resolve())
+            except OSError:
+                pass
+        search_paths = list(set(valid_paths))
+
+        # Scan paths safely with limited depth
+        checked_paths = set()
+        for base_path in search_paths:
+            try:
+                # Use direct children + 1-level subdirectories
+                for pattern in ["*", "*/*"]:
+                    for path in base_path.glob(pattern):
+                        try:
+                            if path.is_dir() and path not in checked_paths:
+                                if self.is_rpg_mv_game(path):
+                                    self.game_paths.append(path)
+                                    self.list_widget.addItem(path.name)
+                                checked_paths.add(path)
+                        except (PermissionError, OSError) as e:
+                            print(f"Skipped {path}: {str(e)}")
+            except Exception as e:
+                print(f"Skipped base path {base_path}: {str(e)}")
+
+    def is_rpg_mv_game(self, path):
+        # Check for common RPG Maker MV files
+        required_files = {
+            "index.html",
+            "js/rpg_core.js",
+            "js/rpg_managers.js",
+            "js/plugins.js"
+        }
+        return all(
+            (path / file).exists()
+            for file in required_files
+        )
 
 class SaveFileEditor(QMainWindow):
     def __init__(self):
@@ -91,6 +224,11 @@ class SaveFileEditor(QMainWindow):
         self.beautify_action.toggled.connect(self.toggle_beautifier)
         toolbar.addAction(self.beautify_action)
 
+        detect_icon = self.style().standardIcon(QStyle.SP_ComputerIcon)
+        detect_action = QAction(detect_icon, "Detect Games", self)
+        detect_action.triggered.connect(self.show_game_detection)
+        toolbar.addAction(detect_action)
+
         # Undo/Redo Actions
         undo_icon = self.style().standardIcon(QStyle.SP_ArrowBack)
         self.undo_action = QAction(undo_icon, "Undo", self)
@@ -117,6 +255,34 @@ class SaveFileEditor(QMainWindow):
                 self.restore_expansion_states(expanded)
             finally:
                 self.tree.blockSignals(False)
+
+    def show_game_detection(self):
+        self.game_detection_dialog = GameDetectionDialog(self)  # Store as instance variable
+        self.game_detection_dialog.list_widget.itemClicked.connect(self.handle_game_selection)
+        self.game_detection_dialog.exec()
+
+    def handle_game_selection(self, item):
+        # Use the stored dialog reference
+        game_path = next(
+            p for p in self.game_detection_dialog.game_paths
+            if p.name == item.text()
+        )
+
+        save_dir = game_path / "www/save"
+        if not save_dir.exists():
+            save_dir.mkdir(parents=True)
+
+        # Open file dialog in the game's save directory
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Save File",
+            str(save_dir),
+            "RPG Maker Save Files (*.rpgsave)"
+        )
+
+        if filename:
+            self.current_file = filename
+            self.load_file()
 
     def save_expansion_states(self):
         """Track expansion by data paths instead of UI items"""
