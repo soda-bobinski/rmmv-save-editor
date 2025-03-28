@@ -15,6 +15,33 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QClipboard, QKeySequence
 from PySide6.QtCore import Qt, QObject, QByteArray, QThread, Signal
 
+def is_rpg_mv_game(path):
+    # Check for both www-based and direct file structure
+    www_path = path / "www"
+    game_root = path.parent if path.name.lower() == "www" else path
+
+    # Method 1: Classic www folder + Game.exe
+    classic_conditions = [
+        (www_path / "index.html").exists(),
+        (www_path / "js/rpg_core.js").exists(),
+        (www_path / "js/rpg_managers.js").exists(),
+        (game_root / "Game.exe").exists()
+    ]
+
+    # Method 2: Direct file structure (web deployment)
+    web_conditions = [
+        (path / "index.html").exists(),
+        (path / "js/rpg_core.js").exists(),
+        (path / "js/rpg_managers.js").exists(),
+        (path / "js/plugins.js").exists()
+    ]
+
+    # Return game root path if either condition matches
+    if all(classic_conditions):
+        return game_root  # www folder's parent or existing game root
+    elif all(web_conditions):
+        return path  # web-based deployment
+    return None
 
 class Command:
     def __init__(self, path, old_value, new_value):
@@ -66,7 +93,7 @@ class GameScanner(QThread):
 
                             if path.is_dir() and path not in checked_paths:
                                 checked_paths.add(path)
-                                if self.is_rpg_mv_game(path):
+                                if is_rpg_mv_game(path):
                                     self.game_found.emit(path)
                 except Exception as e:
                     self.error_occurred.emit(f"Skipped {base_path}: {str(e)}")
@@ -77,15 +104,6 @@ class GameScanner(QThread):
 
     def stop(self):
         self._is_running = False
-
-    def is_rpg_mv_game(self, path):
-        required_files = {
-            "index.html",
-            "js/rpg_core.js",
-            "js/rpg_managers.js",
-            "js/plugins.js"
-        }
-        return all((path / file).exists() for file in required_files)
 
 class GameDetectionDialog(QDialog):
     def __init__(self, parent=None):
@@ -127,19 +145,6 @@ class GameDetectionDialog(QDialog):
 
         self.setLayout(self.layout)
 
-    def is_rpg_mv_game(self, path):
-        # Check for common RPG Maker MV files
-        required_files = {
-            "index.html",
-            "js/rpg_core.js",
-            "js/rpg_managers.js",
-            "js/plugins.js"
-        }
-        return all(
-            (path / file).exists()
-            for file in required_files
-        )
-
     def start_scan(self):
         # Clear previous results
         self.list_widget.clear()
@@ -159,11 +164,36 @@ class GameDetectionDialog(QDialog):
         self.scanner.start()
 
     def add_game(self, path):
-        self.game_paths.append(path)
-        self.list_widget.addItem(path.name)
-        # Update cache immediately as we find games
+        # Normalize path to show game root folder
+        if path.name.lower() == "www":
+            game_root = path.parent
+        else:
+            game_root = path
+
+        # Avoid duplicates
+        if game_root not in self.game_paths:
+            self.game_paths.append(game_root)
+            self.list_widget.addItem(game_root.name)
+
+        # Update parent cache
         if self.parent_editor:
             self.parent_editor.cached_games = self.game_paths.copy()
+
+    # def add_game(self, path):
+    #     # Normalize path to show game root folder
+    #     if path.name.lower() == "www":
+    #         game_root = path.parent
+    #     else:
+    #         game_root = path
+    #
+    #     # Avoid duplicates
+    #     if game_root not in self.game_paths:
+    #         self.game_paths.append(game_root)
+    #         self.list_widget.addItem(game_root.name)
+    #
+    #     # Update parent cache
+    #     if self.parent_editor:
+    #         self.parent_editor.cached_games = self.game_paths.copy()
 
     def update_progress_text(self, text):
         self.progress_label.setText(text)
@@ -180,18 +210,78 @@ class GameDetectionDialog(QDialog):
         if not self.game_paths:
             self.list_widget.addItem("No games found")
 
+    def get_windows_drives(self):
+        import ctypes
+        drives = []
+        drive_types = {
+            0: "Unknown", 1: "No Root", 2: "Removable",
+            3: "Local Disk", 4: "Network", 5: "CD-ROM",
+            6: "RAM Disk"
+        }
+
+        for drive in range(65, 91):  # A-Z
+            drive_name = ctypes.c_wchar_p(chr(drive) + ":\\")
+            if ctypes.windll.kernel32.GetDriveTypeW(drive_name) == 3:
+                drives.append(Path(drive_name.value))
+        return drives
+
+    def get_steam_library_paths(self):
+        steam_paths = []
+        try:
+            # Get Steam installation path from registry
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam") as key:
+                steam_install = Path(winreg.QueryValueEx(key, "InstallPath")[0])
+
+            # Add main Steam apps path
+            main_steamapps = steam_install / "steamapps/common"
+            if main_steamapps.exists():
+                steam_paths.append(main_steamapps)
+
+            # Parse libraryfolders.vdf for additional libraries
+            library_file = steam_install / "steamapps/libraryfolders.vdf"
+            if library_file.exists():
+                with open(library_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if '"path"' in line:
+                            # Extract path from lines like: "path"		"C:\\SteamLibrary"
+                            path = Path(line.split('"')[3].replace("\\\\", "/"))
+                            steamapps = path / "steamapps/common"
+                            if steamapps.exists():
+                                steam_paths.append(steamapps)
+
+            # Add Linux compatibility paths (Proton games)
+            proton_paths = [
+                steam_install / "steamapps/compatdata",
+                steam_install / "steamapps/shadercache"
+            ]
+            for p in proton_paths:
+                if p.exists():
+                    steam_paths.append(p)
+
+        except Exception as e:
+            print(f"Steam detection error: {str(e)}")
+
+        return steam_paths
+
     def get_search_paths(self):
-        # Implement your path collection logic here
-        return [
+        search_paths = [
             Path.home() / "Games",
             Path("C:/Program Files"),
             Path("C:/Program Files (x86)"),
-            Path.home() / "Games",
             Path.home() / "Desktop",
             Path.home() / "Documents",
             Path.home() / "Downloads",
             Path.home() / "AppData/Local"
         ]
+
+        # Add Steam library paths
+        steam_paths = self.get_steam_library_paths()
+        search_paths.extend(steam_paths)
+
+        # Add other drives
+        search_paths.extend(self.get_windows_drives())
+
+        return search_paths
 
     def closeEvent(self, event):
         if self.scanner and self.scanner.isRunning():
@@ -303,15 +393,20 @@ class SaveFileEditor(QMainWindow):
 
     def handle_game_selection(self, item):
         try:
+            # Get the selected game path
             game_path = next(
                 p for p in self.game_detection_dialog.game_paths
                 if p.name == item.text()
             )
+
+            # Determine save directory path
             save_dir = game_path / "www/save"
 
+            # Create directory if needed
             if not save_dir.exists():
                 save_dir.mkdir(parents=True)
 
+            # Open file dialog
             filename, _ = QFileDialog.getOpenFileName(
                 self,
                 "Open Save File",
