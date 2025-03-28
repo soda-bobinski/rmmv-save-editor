@@ -29,123 +29,103 @@ class SafeTreeWidgetItem(QTreeWidgetItem):
         self.original_key = ""
         self.setFlags(self.flags() | Qt.ItemIsEditable)
 
+
 class GameScanner(QThread):
+    update_progress = Signal(str)  # Path being checked
     game_found = Signal(Path)
     finished = Signal()
+    error_occurred = Signal(str)
 
     def __init__(self, search_paths):
         super().__init__()
         self.search_paths = search_paths
+        self._pause = False
+        self._is_running = True
+
+    def pause(self):
+        self._pause = True
+
+    def resume(self):
+        self._pause = False
 
     def run(self):
-        checked_paths = set()
-        for base_path in self.search_paths:
-            try:
-                for pattern in ["*", "*/*"]:
-                    for path in base_path.glob(pattern):
-                        if path.is_dir() and path not in checked_paths:
-                            if self.is_rpg_mv_game(path):
-                                self.game_found.emit(path)
-                            checked_paths.add(path)
-            except Exception as e:
-                continue
-        self.finished.emit()
+        try:
+            checked_paths = set()
+            for base_path in self.search_paths:
+                if self._pause:
+                    while self._pause:
+                        time.sleep(0.1)
+
+                self.update_progress.emit(f"Scanning {base_path}...")
+
+                try:
+                    for pattern in ["*", "*/*"]:
+                        for path in base_path.glob(pattern):
+                            if not self._is_running:
+                                return
+
+                            if path.is_dir() and path not in checked_paths:
+                                checked_paths.add(path)
+                                if self.is_rpg_mv_game(path):
+                                    self.game_found.emit(path)
+                except Exception as e:
+                    self.error_occurred.emit(f"Skipped {base_path}: {str(e)}")
+
+            self.finished.emit()
+        except Exception as e:
+            self.error_occurred.emit(f"Scan failed: {str(e)}")
+
+    def stop(self):
+        self._is_running = False
+
+    def is_rpg_mv_game(self, path):
+        required_files = {
+            "index.html",
+            "js/rpg_core.js",
+            "js/rpg_managers.js",
+            "js/plugins.js"
+        }
+        return all((path / file).exists() for file in required_files)
 
 class GameDetectionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.parent_editor = parent
         self.game_paths = []
+        self.scanner = None
         self.init_ui()
+        self.init_with_cache()
+
+    def init_with_cache(self):
+        if self.parent_editor.cached_games:
+            self.game_paths = self.parent_editor.cached_games.copy()
+            for path in self.game_paths:
+                self.list_widget.addItem(path.name)
+            self.progress_label.setText(f"Loaded {len(self.game_paths)} cached games")
+        else:
+            self.start_scan()
 
     def init_ui(self):
         self.setWindowTitle("Detected RPG Maker MV Games")
-        self.setGeometry(200, 200, 400, 300)
+        self.setMinimumSize(400, 300)
 
-        layout = QVBoxLayout()
+        self.layout = QVBoxLayout()
 
+        # Game list
         self.list_widget = QListWidget()
-        self.refresh_btn = QPushButton("Refresh List")
-        self.refresh_btn.clicked.connect(self.detect_games)
 
-        layout.addWidget(self.list_widget)
-        layout.addWidget(self.refresh_btn)
+        # Progress indicators
+        self.progress_label = QLabel("Ready to scan")
+        self.progress_label.setAlignment(Qt.AlignCenter)
 
-        self.setLayout(layout)
-        self.detect_games()
+        self.refresh_btn = QPushButton("Start Scan")
+        self.refresh_btn.clicked.connect(self.start_scan)
 
-    def detect_games(self):
-        self.list_widget.clear()
-        self.game_paths = []
+        self.layout.addWidget(self.progress_label)
+        self.layout.addWidget(self.list_widget)
+        self.layout.addWidget(self.refresh_btn)
 
-        # Get all available drives safely
-        def get_windows_drives():
-            import ctypes
-            drives = []
-            drive_types = {
-                0: "Unknown", 1: "No Root", 2: "Removable",
-                3: "Local Disk", 4: "Network", 5: "CD-ROM",
-                6: "RAM Disk"
-            }
-
-            for drive in range(65, 91):  # A-Z
-                drive_name = ctypes.c_wchar_p(chr(drive) + ":\\")
-                if ctypes.windll.kernel32.GetDriveTypeW(drive_name) == 3:
-                    drives.append(Path(drive_name.value))
-            return drives
-
-        # Common installation locations
-        search_paths = [
-            Path("C:/Program Files"),
-            Path("C:/Program Files (x86)"),
-            Path.home() / "Games",
-            Path.home() / "Desktop",
-            Path.home() / "Documents",
-            Path.home() / "Downloads",
-            Path.home() / "AppData/Local"
-        ]
-
-        # Add drives and platform paths safely
-        search_paths.extend(get_windows_drives())
-
-        # Add Steam paths with validation
-        try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam") as key:
-                steam_path = Path(winreg.QueryValueEx(key, "InstallPath")[0])
-                steam_paths = [
-                    steam_path / "steamapps/common",
-                    steam_path / "steamapps/compatdata"
-                ]
-                search_paths.extend([p for p in steam_paths if p.exists()])
-        except Exception:
-            pass
-
-        # Remove duplicates and invalid paths
-        valid_paths = []
-        for p in search_paths:
-            try:
-                if p.exists() and p.is_dir():
-                    valid_paths.append(p.resolve())
-            except OSError:
-                pass
-        search_paths = list(set(valid_paths))
-
-        # Scan paths safely with limited depth
-        checked_paths = set()
-        for base_path in search_paths:
-            try:
-                # Use direct children + 1-level subdirectories
-                for pattern in ["*", "*/*"]:
-                    for path in base_path.glob(pattern):
-                        try:
-                            if path.is_dir() and path not in checked_paths:
-                                if self.is_rpg_mv_game(path):
-                                    self.game_paths.append(path)
-                                    self.list_widget.addItem(path.name)
-                                checked_paths.add(path)
-                        except (PermissionError, OSError) as e:
-                            print(f"Skipped {path}: {str(e)}")
-            except Exception as e:
-                print(f"Skipped base path {base_path}: {str(e)}")
+        self.setLayout(self.layout)
 
     def is_rpg_mv_game(self, path):
         # Check for common RPG Maker MV files
@@ -160,6 +140,65 @@ class GameDetectionDialog(QDialog):
             for file in required_files
         )
 
+    def start_scan(self):
+        # Clear previous results
+        self.list_widget.clear()
+        self.game_paths = []
+
+        # Setup scanner
+        search_paths = self.get_search_paths()
+        self.scanner = GameScanner(search_paths)
+        self.scanner.game_found.connect(self.add_game)
+        self.scanner.finished.connect(self.on_scan_complete)
+        self.scanner.error_occurred.connect(self.show_scan_error)
+        self.scanner.update_progress.connect(self.update_progress_text)
+
+        # Update UI
+        self.refresh_btn.setEnabled(False)
+        self.progress_label.setText("Scanning...")
+        self.scanner.start()
+
+    def add_game(self, path):
+        self.game_paths.append(path)
+        self.list_widget.addItem(path.name)
+        # Update cache immediately as we find games
+        if self.parent_editor:
+            self.parent_editor.cached_games = self.game_paths.copy()
+
+    def update_progress_text(self, text):
+        self.progress_label.setText(text)
+
+    def show_scan_error(self, error):
+        self.list_widget.addItem(f"Error: {error}")
+
+    def on_scan_complete(self):
+        # Final cache update
+        if self.parent_editor:
+            self.parent_editor.cached_games = self.game_paths.copy()
+        self.refresh_btn.setEnabled(True)
+        self.progress_label.setText("Scan complete")
+        if not self.game_paths:
+            self.list_widget.addItem("No games found")
+
+    def get_search_paths(self):
+        # Implement your path collection logic here
+        return [
+            Path.home() / "Games",
+            Path("C:/Program Files"),
+            Path("C:/Program Files (x86)"),
+            Path.home() / "Games",
+            Path.home() / "Desktop",
+            Path.home() / "Documents",
+            Path.home() / "Downloads",
+            Path.home() / "AppData/Local"
+        ]
+
+    def closeEvent(self, event):
+        if self.scanner and self.scanner.isRunning():
+            self.scanner.stop()
+            self.scanner.wait(2000)
+        event.accept()
+
 class SaveFileEditor(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -170,6 +209,7 @@ class SaveFileEditor(QMainWindow):
         self.beautify_names = False
         self.undo_stack = []
         self.redo_stack = []
+        self.cached_games = []
         self.init_ui()
 
     def init_ui(self):
@@ -257,32 +297,34 @@ class SaveFileEditor(QMainWindow):
                 self.tree.blockSignals(False)
 
     def show_game_detection(self):
-        self.game_detection_dialog = GameDetectionDialog(self)  # Store as instance variable
+        self.game_detection_dialog = GameDetectionDialog(self)
         self.game_detection_dialog.list_widget.itemClicked.connect(self.handle_game_selection)
-        self.game_detection_dialog.exec()
+        self.game_detection_dialog.show()
 
     def handle_game_selection(self, item):
-        # Use the stored dialog reference
-        game_path = next(
-            p for p in self.game_detection_dialog.game_paths
-            if p.name == item.text()
-        )
+        try:
+            game_path = next(
+                p for p in self.game_detection_dialog.game_paths
+                if p.name == item.text()
+            )
+            save_dir = game_path / "www/save"
 
-        save_dir = game_path / "www/save"
-        if not save_dir.exists():
-            save_dir.mkdir(parents=True)
+            if not save_dir.exists():
+                save_dir.mkdir(parents=True)
 
-        # Open file dialog in the game's save directory
-        filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open Save File",
-            str(save_dir),
-            "RPG Maker Save Files (*.rpgsave)"
-        )
+            filename, _ = QFileDialog.getOpenFileName(
+                self,
+                "Open Save File",
+                str(save_dir),
+                "RPG Maker Save Files (*.rpgsave)"
+            )
 
-        if filename:
-            self.current_file = filename
-            self.load_file()
+            if filename:
+                self.current_file = filename
+                self.load_file()
+
+        except Exception as e:
+            self.show_error("Selection Error", str(e))
 
     def save_expansion_states(self):
         """Track expansion by data paths instead of UI items"""
