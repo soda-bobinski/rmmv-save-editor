@@ -6,6 +6,7 @@ from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QListWidget, QLabel, QPushButton, QMessageBox
 )
+# from styles.animations import fade_in, slide_down
 
 def is_rpg_mv_game(path):
     www_path = path / "www"
@@ -87,6 +88,8 @@ class GameDetectionDialog(QDialog):
         self.scanner = None
         self.init_ui()
         self.init_with_cache()
+        # self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+        # self.setAttribute(Qt.WA_TranslucentBackground)
 
     def init_with_cache(self):
         if self.parent_editor.cached_games:
@@ -208,3 +211,12 @@ class GameDetectionDialog(QDialog):
             self.scanner.stop()
             self.scanner.wait(2000)
         event.accept()
+
+    def showEvent(self, event):
+        # fade_in(self, 250)
+        # slide_down(self, 350)
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        self.deleteLater()  # Force cleanup
+        super().hideEvent(event)

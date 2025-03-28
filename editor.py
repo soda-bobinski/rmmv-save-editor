@@ -6,12 +6,15 @@ from lzstring import LZString
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget,
     QTreeWidgetItem, QPushButton, QFileDialog, QMessageBox, QToolBar,
-    QStyle, QLabel, QScrollArea, QApplication
+    QStyle, QLabel, QScrollArea, QApplication, QToolButton
 )
 from PySide6.QtGui import QClipboard, QKeySequence, QAction
-from PySide6.QtCore import Qt, QObject, QByteArray, Signal
+from PySide6.QtCore import (
+    Qt, QObject, QByteArray, Signal, QPropertyAnimation,QEasingCurve,
+    QEvent, QTimer, QPoint
+)
 from game_detection import GameDetectionDialog
-
+# from styles.animations import fade_in, slide_down
 
 class Command:
     def __init__(self, path, old_value, new_value):
@@ -19,6 +22,17 @@ class Command:
         self.old_value = old_value
         self.new_value = new_value
 
+class HoverButton(QPushButton):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._animate_hover = False
+
+    def event(self, event):
+        if event.type() == QEvent.Enter:
+            self.parent().animate_hover(self, True)
+        elif event.type() == QEvent.Leave:
+            self.parent().animate_hover(self, False)
+        return super().event(event)
 
 class SafeTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, parent=None):
@@ -39,6 +53,32 @@ class SaveFileEditor(QMainWindow):
         self.redo_stack = []
         self.cached_games = []
         self.init_ui()
+        self.setup_animations()
+
+    def setup_animations(self):
+        # self.setAttribute(Qt.WA_TranslucentBackground)
+        # self.setAttribute(Qt.WA_NoSystemBackground)
+        # # Replace all QPushButton instances with HoverButton
+        # for btn in self.findChildren(QPushButton):
+        #     hover_btn = HoverButton(btn.text(), self)
+        #     hover_btn.setIcon(btn.icon())
+        #     hover_btn.clicked.connect(btn.clicked)
+        #     btn.deleteLater()
+        pass
+
+    def animate_hover(self, widget, hover):
+        anim = QPropertyAnimation(widget, b"geometry")
+        anim.setDuration(150)
+        rect = widget.geometry()
+
+        if hover:
+            rect.adjust(-2, -2, 2, 2)
+            anim.setEasingCurve(QEasingCurve.OutBack)
+        else:
+            anim.setEasingCurve(QEasingCurve.InBack)
+
+        anim.setEndValue(rect)
+        anim.start()
 
     def init_ui(self):
         self.setWindowTitle("RPG Maker MV Save Editor")
@@ -79,6 +119,7 @@ class SaveFileEditor(QMainWindow):
 
     def init_toolbar(self):
         toolbar = QToolBar("Tools")
+        self.toolbar = toolbar
         self.addToolBar(toolbar)
 
         # Beautify Action
@@ -125,6 +166,14 @@ class SaveFileEditor(QMainWindow):
         self.game_detection_dialog = GameDetectionDialog(self)
         self.game_detection_dialog.list_widget.itemClicked.connect(self.handle_game_selection)
         self.game_detection_dialog.show()
+        # self.dialog = self.game_detection_dialog
+        #
+        # self.dialog.move(self.dialog.pos() + QPoint(0, 100))
+        # anim = QPropertyAnimation(self.dialog, b"pos")
+        # anim.setDuration(300)
+        # anim.setStartValue(self.dialog.pos() - QPoint(0, 100))
+        # anim.setEndValue(self.dialog.pos())
+        # anim.start()
 
     def handle_game_selection(self, item):
         try:

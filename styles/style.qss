@@ -1,0 +1,184 @@
+/* === Base Styles === */
+QWidget {
+    background-color: #1E1E1E;
+    color: #D4D4D4;
+    font-family: 'Inter';
+    font-size: 13px;
+    selection-background-color: #264F78;
+    selection-color: #FFFFFF;
+}
+
+/* === Main Window === */
+QMainWindow {
+    background: QLinearGradient(
+        x1: 0, y1: 0, x2: 1, y2: 1,
+        stop: 0 #1E1E1E, stop: 1 #252526
+    );
+    border: 1px solid #333333;
+    border-radius: 8px;
+}
+
+/* === Toolbars === */
+QToolBar {
+    background-color: #252526;
+    border-bottom: 1px solid #333333;
+    padding: 6px 12px;
+    spacing: 8px;
+}
+
+QToolButton {
+    background-color: #333333;
+    border: 1px solid #3C3C3C;
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-width: 28px;
+    color: #D4D4D4;
+    transition: background-color 150ms ease;
+}
+
+QToolButton:hover {
+    background-color: #3C3C3C;
+    border-color: #4D4D4D;
+}
+
+QToolButton:pressed {
+    background-color: #005FB8;
+    color: white;
+}
+
+QToolButton:checked {
+    background-color: #005FB8;
+    color: white;
+}
+
+/* === Buttons === */
+QPushButton {
+    background-color: #333333;
+    border: 1px solid #3C3C3C;
+    border-radius: 4px;
+    padding: 8px 16px;
+    color: #D4D4D4;
+    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+QPushButton:hover {
+    background-color: #3C3C3C;
+    transform: translateY(-1px);
+}
+
+QPushButton:pressed {
+    background-color: #005FB8;
+    color: white;
+    transform: translateY(0);
+}
+
+/* === Tree Widget === */
+QTreeWidget {
+    background-color: #252526;
+    alternate-background-color: #2D2D2D;
+    border: 1px solid #333333;
+    border-radius: 4px;
+    margin: 8px;
+    outline: 0;
+}
+
+QTreeWidget::item {
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 3px;
+    margin: 2px 0;
+}
+
+QTreeWidget::item:hover {
+    background-color: #2A2D2E;
+}
+
+QTreeWidget::item:selected {
+    background-color: #005FB8;
+    color: white;
+}
+
+QHeaderView::section {
+    background-color: #333333;
+    color: #D4D4D4;
+    padding: 4px;
+    border: 1px solid #3C3C3C;
+}
+
+/* === Scroll Bars === */
+QScrollBar:vertical {
+    background: #252526;
+    width: 12px;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical {
+    background: #3C3C3C;
+    border-radius: 6px;
+    min-height: 30px;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    background: none;
+}
+
+/* === Dialogs === */
+QDialog {
+    background-color: #252526;
+    border: 1px solid #3C3C3C;
+    border-radius: 4px;
+    padding: 16px;
+}
+
+QListWidget {
+    background-color: #2D2D2D;
+    border: 1px solid #3C3C3C;
+    border-radius: 3px;
+    padding: 8px;
+}
+
+QMessageBox {
+    background-color: #252526;
+}
+
+/* === Progress Bar === */
+QProgressBar {
+    background-color: #333333;
+    border: 1px solid #3C3C3C;
+    border-radius: 4px;
+    height: 12px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #005FB8;
+    border-radius: 3px;
+}
+
+/* === Text Inputs === */
+QLineEdit {
+    background-color: #333333;
+    border: 1px solid #3C3C3C;
+    border-radius: 4px;
+    padding: 4px 8px;
+    selection-background-color: #005FB8;
+}
+
+/* === Checkboxes === */
+QCheckBox {
+    spacing: 6px;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #3C3C3C;
+    border-radius: 3px;
+    background-color: #252526;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #005FB8;
+    image: url(resources/icons/check.svg);
+}
