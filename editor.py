@@ -8,19 +8,22 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem, QPushButton, QFileDialog, QMessageBox, QToolBar,
     QStyle, QLabel, QScrollArea, QApplication, QToolButton
 )
-from PySide6.QtGui import QClipboard, QKeySequence, QAction
+from PySide6.QtGui import QClipboard, QKeySequence, QAction, QPixmap, QIcon, QColor, QPainter
 from PySide6.QtCore import (
-    Qt, QObject, QByteArray, Signal, QPropertyAnimation,QEasingCurve,
+    Qt, QObject, QByteArray, Signal, QPropertyAnimation, QEasingCurve,
     QEvent, QTimer, QPoint
 )
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtGui import QImage
 from game_detection import GameDetectionDialog
-# from styles.animations import fade_in, slide_down
+
 
 class Command:
     def __init__(self, path, old_value, new_value):
         self.path = path
         self.old_value = old_value
         self.new_value = new_value
+
 
 class HoverButton(QPushButton):
     def __init__(self, *args, **kwargs):
@@ -33,6 +36,7 @@ class HoverButton(QPushButton):
         elif event.type() == QEvent.Leave:
             self.parent().animate_hover(self, False)
         return super().event(event)
+
 
 class SafeTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, parent=None):
@@ -52,18 +56,11 @@ class SaveFileEditor(QMainWindow):
         self.undo_stack = []
         self.redo_stack = []
         self.cached_games = []
+        self._current_theme = "dark"
         self.init_ui()
         self.setup_animations()
 
     def setup_animations(self):
-        # self.setAttribute(Qt.WA_TranslucentBackground)
-        # self.setAttribute(Qt.WA_NoSystemBackground)
-        # # Replace all QPushButton instances with HoverButton
-        # for btn in self.findChildren(QPushButton):
-        #     hover_btn = HoverButton(btn.text(), self)
-        #     hover_btn.setIcon(btn.icon())
-        #     hover_btn.clicked.connect(btn.clicked)
-        #     btn.deleteLater()
         pass
 
     def animate_hover(self, widget, hover):
@@ -80,6 +77,17 @@ class SaveFileEditor(QMainWindow):
         anim.setEndValue(rect)
         anim.start()
 
+    def create_svg_icon(self, svg_path, color):
+        renderer = QSvgRenderer(svg_path)
+        image = QImage(16, 16, QImage.Format_ARGB32)
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        renderer.render(painter)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(image.rect(), QColor(color))
+        painter.end()
+        return QIcon(QPixmap.fromImage(image))
+
     def init_ui(self):
         self.setWindowTitle("RPG Maker MV Save Editor")
         self.setGeometry(100, 100, 800, 600)
@@ -88,7 +96,6 @@ class SaveFileEditor(QMainWindow):
         layout = QVBoxLayout(main_widget)
         self.init_toolbar()
 
-        # File controls
         file_layout = QHBoxLayout()
         self.open_btn = QPushButton("Open Save File")
         self.open_btn.clicked.connect(self.open_file)
@@ -99,18 +106,15 @@ class SaveFileEditor(QMainWindow):
         file_layout.addWidget(self.open_btn)
         file_layout.addWidget(self.save_btn)
 
-        # Tree display
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Property", "Value"])
         self.tree.setColumnWidth(0, 250)
         self.tree.itemChanged.connect(self.handle_item_change)
 
-        # Layout organization
         layout.addLayout(file_layout)
         layout.addWidget(QLabel("Save File Contents:"))
         layout.addWidget(self.tree)
 
-        # Style
         self.setStyleSheet("""
             QTreeWidget::item { padding: 3px; }
             QToolButton { padding: 5px; border-radius: 3px; }
@@ -122,27 +126,30 @@ class SaveFileEditor(QMainWindow):
         self.toolbar = toolbar
         self.addToolBar(toolbar)
 
-        # Beautify Action
-        beautify_icon = self.style().standardIcon(QStyle.SP_FileDialogContentsView)
+        icon_color = "#ffffff"
+
+        beautify_path = Path(__file__).parent / "resources" / "icons" / "actions" / "beautify.svg"
+        beautify_icon = self.create_svg_icon(str(beautify_path), icon_color)
         self.beautify_action = QAction(beautify_icon, "Beautify Names", self)
         self.beautify_action.setCheckable(True)
         self.beautify_action.toggled.connect(self.toggle_beautifier)
         toolbar.addAction(self.beautify_action)
 
-        # Game Detection
-        detect_icon = self.style().standardIcon(QStyle.SP_ComputerIcon)
+        detect_path = Path(__file__).parent / "resources" / "icons" / "actions" / "game-controller.svg"
+        detect_icon = self.create_svg_icon(str(detect_path), icon_color)
         detect_action = QAction(detect_icon, "Detect Games", self)
         detect_action.triggered.connect(self.show_game_detection)
         toolbar.addAction(detect_action)
 
-        # Undo/Redo Actions
-        undo_icon = self.style().standardIcon(QStyle.SP_ArrowBack)
+        undo_path = Path(__file__).parent / "resources" / "icons" / "actions" / "undo.svg"
+        undo_icon = self.create_svg_icon(str(undo_path), icon_color)
         self.undo_action = QAction(undo_icon, "Undo", self)
         self.undo_action.triggered.connect(self.undo)
         self.undo_action.setShortcut(QKeySequence.Undo)
         self.undo_action.setEnabled(False)
 
-        redo_icon = self.style().standardIcon(QStyle.SP_ArrowForward)
+        redo_path = Path(__file__).parent / "resources" / "icons" / "actions" / "redo.svg"
+        redo_icon = self.create_svg_icon(str(redo_path), icon_color)
         self.redo_action = QAction(redo_icon, "Redo", self)
         self.redo_action.triggered.connect(self.redo)
         self.redo_action.setShortcut(QKeySequence.Redo)
@@ -150,6 +157,57 @@ class SaveFileEditor(QMainWindow):
 
         toolbar.addAction(self.undo_action)
         toolbar.addAction(self.redo_action)
+
+        self.theme_toggle_action = QAction("Toggle Theme", self)
+        self.theme_toggle_action.triggered.connect(self.toggle_theme)
+        self.update_theme_icon()
+        toolbar.addAction(self.theme_toggle_action)
+
+    def toggle_theme(self):
+        new_theme = 'light' if self._current_theme == 'dark' else 'dark'
+        self.set_theme(new_theme)
+
+    def set_theme(self, theme):
+        self._current_theme = theme
+        style_path = Path(__file__).parent / "styles" / f"{theme}.qss"
+        with open(style_path, "r") as f:
+            style = f.read()
+            style += """
+            QToolButton, QPushButton {
+                transition: none;
+            }
+            """
+            QApplication.instance().setStyleSheet(style)
+
+        icon_color = "#000000" if theme == 'light' else "#ffffff"
+        self.update_icons_color(icon_color)
+        self.update_theme_icon()
+
+    def update_icons_color(self, color):
+        beautify_path = Path(__file__).parent / "resources" / "icons" / "actions" / "beautify.svg"
+        self.beautify_action.setIcon(self.create_svg_icon(str(beautify_path), color))
+
+        detect_path = Path(__file__).parent / "resources" / "icons" / "actions" / "game-controller.svg"
+        detect_action = next((a for a in self.toolbar.actions() if a.text() == "Detect Games"), None)
+        if detect_action:
+            detect_action.setIcon(self.create_svg_icon(str(detect_path), color))
+
+        undo_path = Path(__file__).parent / "resources" / "icons" / "actions" / "undo.svg"
+        self.undo_action.setIcon(self.create_svg_icon(str(undo_path), color))
+
+        redo_path = Path(__file__).parent / "resources" / "icons" / "actions" / "redo.svg"
+        self.redo_action.setIcon(self.create_svg_icon(str(redo_path), color))
+
+    def update_theme_icon(self):
+        icon_color = "#000000" if self._current_theme == 'light' else "#ffffff"
+
+        if self._current_theme == 'dark':
+            icon_path = Path(__file__).parent / "resources" / "icons" / "actions" / "dark_mode_on.svg"
+        else:
+            icon_path = Path(__file__).parent / "resources" / "icons" / "actions" / "dark_mode_off.svg"
+
+        self.theme_toggle_action.setIcon(self.create_svg_icon(str(icon_path), icon_color))
+        self.theme_toggle_action.setToolTip(f"Switch to {'dark' if self._current_theme == 'light' else 'light'} mode")
 
     def toggle_beautifier(self, state):
         self.beautify_names = state
@@ -166,31 +224,19 @@ class SaveFileEditor(QMainWindow):
         self.game_detection_dialog = GameDetectionDialog(self)
         self.game_detection_dialog.list_widget.itemClicked.connect(self.handle_game_selection)
         self.game_detection_dialog.show()
-        # self.dialog = self.game_detection_dialog
-        #
-        # self.dialog.move(self.dialog.pos() + QPoint(0, 100))
-        # anim = QPropertyAnimation(self.dialog, b"pos")
-        # anim.setDuration(300)
-        # anim.setStartValue(self.dialog.pos() - QPoint(0, 100))
-        # anim.setEndValue(self.dialog.pos())
-        # anim.start()
 
     def handle_game_selection(self, item):
         try:
-            # Get the selected game path
             game_path = next(
                 p for p in self.game_detection_dialog.game_paths
                 if p.name == item.text()
             )
 
-            # Determine save directory path
             save_dir = game_path / "www/save"
 
-            # Create directory if needed
             if not save_dir.exists():
                 save_dir.mkdir(parents=True)
 
-            # Open file dialog
             filename, _ = QFileDialog.getOpenFileName(
                 self,
                 "Open Save File",
@@ -254,16 +300,17 @@ class SaveFileEditor(QMainWindow):
             self.load_file()
 
     def show_error(self, title, message, details=""):
-        print(f"\n=== ERROR ===")
-        print(f"Title: {title}")
-        print(f"Message: {message}")
-        print(f"Details:\n{details}")
-        print("=============\n")
-
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle(title)
         msg_box.setIcon(QMessageBox.Critical)
         msg_box.setText(message)
+
+        error_path = Path(__file__).parent / "resources" / "icons" / "status" / "error.svg"
+        if error_path.exists():
+            icon_color = "#000000" if self._current_theme == 'light' else "#ffffff"
+            error_icon = self.create_svg_icon(str(error_path), icon_color)
+            msg_box.setIconPixmap(error_icon.pixmap(32, 32))
+
         copy_btn = QPushButton("Copy Error", msg_box)
         copy_btn.clicked.connect(lambda: self.copy_to_clipboard(
             f"{title}\n{message}\n\nDetails:\n{details}"
@@ -373,7 +420,6 @@ class SaveFileEditor(QMainWindow):
         original_text = item.text(1)
 
         try:
-            # Build path using original keys
             while current_item and current_item != self.tree.invisibleRootItem():
                 if isinstance(current_item, SafeTreeWidgetItem):
                     path.insert(0, current_item.original_key)
@@ -381,7 +427,6 @@ class SaveFileEditor(QMainWindow):
                     path.insert(0, current_item.text(0))
                 current_item = current_item.parent()
 
-            # Navigate through data structure
             current_data = self.data
             for i, step in enumerate(path):
                 if isinstance(current_data, dict):
@@ -407,7 +452,6 @@ class SaveFileEditor(QMainWindow):
                         f"Unexpected {type(current_data).__name__} at position {i}"
                     )
 
-            # Value conversion and update
             old_value = current_data
             new_value = self.convert_value(item.text(1))
 

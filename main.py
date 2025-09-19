@@ -5,24 +5,20 @@ from PySide6.QtGui import QFontDatabase, QFont
 from editor import SaveFileEditor
 
 
-def load_styles(app):
-    # Load fonts
+def load_styles(app, theme='dark'):
     font_dir = Path(__file__).parent / "resources" / "fonts"
     QFontDatabase.addApplicationFont(str(font_dir / "Inter-Regular.ttf"))
 
-    # Load styles
-    style_path = Path(__file__).parent / "styles" / "style.qss"
+    style_path = Path(__file__).parent / "styles" / f"{theme}.qss"
     with open(style_path, "r") as f:
         style = f.read()
-        # Add basic animation compatibility
         style += """
         QToolButton, QPushButton {
-            transition: none; /* Disable CSS transitions */
+            transition: none;
         }
         """
         app.setStyleSheet(style)
 
-    # Set default font
     app.setFont(QFont("Inter", 10))
 
 

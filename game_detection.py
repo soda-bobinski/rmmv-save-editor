@@ -6,7 +6,6 @@ from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QListWidget, QLabel, QPushButton, QMessageBox
 )
-# from styles.animations import fade_in, slide_down
 
 def is_rpg_mv_game(path):
     www_path = path / "www"
@@ -88,8 +87,6 @@ class GameDetectionDialog(QDialog):
         self.scanner = None
         self.init_ui()
         self.init_with_cache()
-        # self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
-        # self.setAttribute(Qt.WA_TranslucentBackground)
 
     def init_with_cache(self):
         if self.parent_editor.cached_games:
@@ -107,6 +104,7 @@ class GameDetectionDialog(QDialog):
         self.list_widget = QListWidget()
         self.progress_label = QLabel("Ready to scan")
         self.progress_label.setAlignment(Qt.AlignCenter)
+        self.progress_label.setStyleSheet("background-color: transparent;")
         self.refresh_btn = QPushButton("Start Scan")
         self.refresh_btn.clicked.connect(self.start_scan)
         self.layout.addWidget(self.progress_label)
@@ -213,10 +211,8 @@ class GameDetectionDialog(QDialog):
         event.accept()
 
     def showEvent(self, event):
-        # fade_in(self, 250)
-        # slide_down(self, 350)
         super().showEvent(event)
 
     def hideEvent(self, event):
-        self.deleteLater()  # Force cleanup
+        self.deleteLater()
         super().hideEvent(event)
