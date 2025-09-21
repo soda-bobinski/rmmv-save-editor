@@ -48,6 +48,9 @@ class SafeTreeWidgetItem(QTreeWidgetItem):
 class SaveFileEditor(QMainWindow):
     def __init__(self):
         super().__init__()
+        icon_path = Path(__file__).parent / "resources" / "icons" / "branding" / "icon.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         self.current_file = ""
         self.data = {}
         self.lz = LZString()

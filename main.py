@@ -4,7 +4,6 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFontDatabase, QFont, QIcon
 from editor import SaveFileEditor
 
-
 def load_styles(app, theme='dark'):
     font_dir = Path(__file__).parent / "resources" / "fonts"
     QFontDatabase.addApplicationFont(str(font_dir / "Inter-Regular.ttf"))
@@ -26,6 +25,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     load_styles(app)
     window = SaveFileEditor()
-    window.setWindowIcon(QIcon("resources/icons/branding/icon.ico"))
     window.show()
     sys.exit(app.exec())
