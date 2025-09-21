@@ -118,7 +118,6 @@ class SaveFileEditor(QMainWindow):
         self.setStyleSheet("""
             QTreeWidget::item { padding: 3px; }
             QToolButton { padding: 5px; border-radius: 3px; }
-            QToolButton:checked { background-color: #e0f0ff; }
         """)
 
     def init_toolbar(self):
