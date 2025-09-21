@@ -1,6 +1,6 @@
 # RPG Maker MV Save Editor
 
-A modern desktop application for editing RPG Maker MV save files with theme support and a clean interface.
+A modern desktop application for editing RPG Maker MV save files.
 
 ![RPG Maker MV Save Editor](https://img.shields.io/badge/RPG_Maker_MV-Save_Editor-blue?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey?style=for-the-badge)
@@ -8,7 +8,7 @@ A modern desktop application for editing RPG Maker MV save files with theme supp
 
 ## Overview
 
-An user-friendly GUI editor for RPG Maker MV save files (.rpgsave) that helps you modify save data with precision.
+An user-friendly GUI editor for RPG Maker MV save files (.rpgsave).
 
 ## Features
 
