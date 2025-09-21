@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QFontDatabase, QFont
+from PySide6.QtGui import QFontDatabase, QFont, QIcon
 from editor import SaveFileEditor
 
 
@@ -26,5 +26,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     load_styles(app)
     window = SaveFileEditor()
+    window.setWindowIcon(QIcon("resources/icons/branding/icon.ico"))
     window.show()
     sys.exit(app.exec())

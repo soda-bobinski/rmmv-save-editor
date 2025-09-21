@@ -11,3 +11,11 @@ venv/
 # Other
 *.bak
 *.tmp
+
+# PyInstaller
+dist/
+build/
+*.spec
+
+# Executable
+RPGMakerSaveEditor.exe
